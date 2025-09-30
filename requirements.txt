@@ -1,0 +1,24 @@
+# --- Core ---
+aiogram==3.13.1
+python-dateutil==2.9.0.post0
+dateparser==1.2.0
+APScheduler==3.10.4
+python-dotenv==1.0.1
+pydantic==2.9.2
+uvicorn==0.30.6
+fastapi==0.115.0
+aiofiles==24.1.0
+
+# --- Google API ---
+google-api-python-client==2.149.0
+google-auth==2.35.0
+google-auth-oauthlib==1.2.1
+
+# --- Speech Recognition ---
+vosk==0.3.45
+# Альтернатива: openai-whisper (не добавлен по умолчанию, требует ffmpeg и моделей)
+
+# --- Speech Synthesis (TTS) ---
+edge-tts==6.1.11
+gTTS==2.5.3
+

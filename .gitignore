@@ -1,0 +1,27 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+
+# --- Venv ---
+.venv/
+venv/
+
+# --- IDE/OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Личные секреты ---
+client_secret.json
+google_token.json
+photo.jpeg
+comments.txt
+AUTODEPLOY.md
+
+# --- Логи ---
+*.log
+*.tmp
