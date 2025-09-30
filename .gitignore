@@ -1,27 +1,29 @@
-# --- Python ---
+# Python / venv
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-*.db
-
-# --- Venv ---
 .venv/
 venv/
 
-# --- IDE/OS ---
+# IDE / OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 
-# --- Личные секреты ---
+# Временные/логи
+*.log
+tmp/
+tmp_tts/
+.oauth_state
+
+# Данные/модели/состояние (персистентка)
+state/
+models/
+
+# Секреты (если вдруг опять окажутся в корне)
+.env
 client_secret.json
 google_token.json
 photo.jpeg
 comments.txt
 AUTODEPLOY.md
-
-# --- Логи ---
-*.log
-*.tmp
