@@ -1,8 +1,10 @@
+# app/main.py
 import asyncio
 import logging
 import os
 from pathlib import Path
-from datetime import timedelta
+from datetime import timedelta, datetime
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -11,11 +13,11 @@ from apscheduler.triggers.date import DateTrigger
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, FSInputFile
 
-from nlu import parse_intent
-from calendar_client import CalendarClient
-from storage import Storage
-from stt import transcribe_voice
-from tts import synthesize_tts_async
+from app.nlu import parse_intent
+from app.calendar_client import CalendarClient
+from app.storage import Storage
+from app.stt import transcribe_voice
+from app.tts import synthesize_tts_async
 
 
 # ---------- CONFIG ----------
@@ -23,19 +25,83 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
 TZ = os.getenv("TZ", "Asia/Yekaterinburg")
+SCHED_TZ = ZoneInfo(TZ)  # единая TZ для всего
 BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
 OWNER_ID = int(os.getenv("TG_OWNER_ID", "0"))
-REMINDER_MIN = int(os.getenv("REMINDER_MINUTES_BEFORE", "25"))
+REMINDER_MIN = int(os.getenv("REMINDER_MINUTES_BEFORE", "30"))        # напоминание Google
+BOT_REMINDER_MIN = int(os.getenv("BOT_REMINDER_MINUTES_BEFORE", "15"))  # напоминание бота
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
-scheduler = AsyncIOScheduler(timezone=TZ)
+scheduler = AsyncIOScheduler(
+    timezone=SCHED_TZ,
+    job_defaults={
+        "coalesce": True,
+        "misfire_grace_time": 60,
+    },
+)
+
 cal = CalendarClient()
 db = Storage("sqlite.db")
 
+HELP_TEXT = (
+    "Не поняла запрос. Вот примеры того, как можно задавать напоминания:\n\n"
+    "• завтра в 10:00 напомни оплатить хостинг\n"
+    "• через 2 часа позвонить маме\n"
+    "• в пятницу в 14 встреча с Иваном на час\n"
+    "• создай встречу завтра в 15:30 с клиентом\n"
+    "• через 45 минут проверить сервер\n"
+    "• во вторник в 9 утра совещание на полтора часа\n"
+    "• через неделю в 18:00 тренировка\n"
+    "• в понедельник в 11:00 запись к врачу\n"
+    "• напомни через 10 минут выключить чайник\n"
+    "• в субботу в 19:00 поход в кино\n"
+    "• завтра в обед встреча с командой на 30 минут\n"
+    "• через 3 дня в 8 утра звонок директору\n"
+    "• 25 декабря в 20:00 поздравить родителей\n"
+    "• сегодня в 22:00 напомни проверить логи\n"
+    "• на следующей неделе во вторник в 14:00 встреча в офисе\n"
+)
+
 
 # ---------- HELPERS ----------
+def _ensure_aware(dt: datetime) -> datetime:
+    """Привести datetime к timezone-aware в TZ из .env."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=SCHED_TZ)
+    return dt.astimezone(SCHED_TZ)
+
+
+async def _send_bot_reminder(summary: str, start_dt: datetime):
+    try:
+        await bot.send_message(
+            OWNER_ID,
+            f"🔔 Напоминание: «{summary}» (в {start_dt.strftime('%H:%M')})", # f"🔔 Напоминание: «{summary}» через {BOT_REMINDER_MIN} мин. (в {start_dt.strftime('%H:%M')})",
+        )
+    except Exception as e:
+        logging.error(f"Ошибка при отправке напоминания: {e}")
+
+
+def _safe_schedule_bot_reminder(summary: str, start_dt: datetime) -> None:
+    """Ставит локальное напоминание от бота за BOT_REMINDER_MIN минут."""
+    start = _ensure_aware(start_dt)
+    remind_at = start - timedelta(minutes=BOT_REMINDER_MIN)
+    now = datetime.now(SCHED_TZ)
+
+    if remind_at <= now:
+        # если момент напоминания уже прошёл — шлём сразу
+        asyncio.create_task(_send_bot_reminder(summary, start))
+    else:
+        # регистрируем асинхронную задачу напрямую
+        scheduler.add_job(
+            _send_bot_reminder,
+            trigger=DateTrigger(run_date=remind_at),
+            args=[summary, start],   # 👈 передаём параметры
+        )
+
+
 async def send_reply(m: Message, text: str, reply_mode: str = "text"):
+    """Ответить текстом или голосом (с TTS fallback в текст)."""
     if reply_mode == "voice":
         try:
             voice_path = await synthesize_tts_async(text, out_dir="./tmp_tts")
@@ -45,7 +111,6 @@ async def send_reply(m: Message, text: str, reply_mode: str = "text"):
             await m.answer(text)  # fallback в текст
     else:
         await m.answer(text)
-
 
 
 # ---------- HANDLERS ----------
@@ -90,45 +155,24 @@ async def process_text(m: Message, text: str, reply_mode: str = "text"):
 
     if intent.type == "create":
         if not intent.start:
-            await send_reply(
-                m,
-                "Не понял дату/время. Примеры:\n"
-                "• завтра в 10:00 напомни оплатить хостинг\n"
-                "• через 2 часа позвонить маме\n"
-                "• в пятницу в 14 встреча с Иваном на час",
-                reply_mode,
-            )
+            await send_reply(m, HELP_TEXT, reply_mode)
             return
 
         event = cal.create_event(
             intent.title,
             intent.start,
             intent.end,
-            reminder_minutes=REMINDER_MIN,
+            reminder_minutes=REMINDER_MIN,  # уведомление Google (popup)
         )
 
         text_ok = (
-            f"Создал событие *{event['summary']}* на {event['when_human']}. "
-            f"Напомню за {REMINDER_MIN} мин."
+            f"Создала событие «{event['summary']}» на {event['when_human']}. "
+            f"Напомню за {BOT_REMINDER_MIN} мин."
         )
+        await send_reply(m, text_ok, reply_mode)
 
-        if reply_mode == "text":
-            await m.answer(text_ok, parse_mode="Markdown")
-        else:
-            await send_reply(m, text_ok, reply_mode)
-
-        # локальное напоминание в TG
-        if intent.start:
-            remind_at = intent.start - timedelta(minutes=REMINDER_MIN)
-            scheduler.add_job(
-                lambda: asyncio.create_task(
-                    bot.send_message(
-                        OWNER_ID,
-                        f"🔔 Напоминание: {event['summary']} через {REMINDER_MIN} мин.",
-                    )
-                ),
-                trigger=DateTrigger(run_date=remind_at),
-            )
+        # телеграм-напоминание от бота
+        _safe_schedule_bot_reminder(event['summary'], intent.start)
 
     elif intent.type == "list":
         events = cal.list_events(intent.range_start, intent.range_end)
@@ -147,16 +191,7 @@ async def process_text(m: Message, text: str, reply_mode: str = "text"):
         await send_reply(m, res["human"], reply_mode)
 
     else:
-        await send_reply(
-            m,
-            "Не понял запрос.\n"
-            "Примеры:\n"
-            "• завтра в 10:00 напомни оплатить хостинг\n"
-            "• что у меня сегодня?\n"
-            "• перенеси встречу с Иваном на завтра 11:30\n"
-            "• удали напоминание оплатить хостинг",
-            reply_mode,
-        )
+        await send_reply(m, HELP_TEXT, reply_mode)
 
 
 # ---------- ENTRY ----------
@@ -167,3 +202,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
