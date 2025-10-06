@@ -1,0 +1,38 @@
+# --- Git ---
+.git
+.gitignore
+
+# --- Python cache ---
+__pycache__/
+*.pyc
+*.py[cod]
+*.log
+
+# --- Venv ---
+.venv/
+venv/
+
+# --- IDE/OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Личные файлы ---
+.env
+*.env
+client_secret.json
+google_token.json
+photo.jpeg
+comments.txt
+AUTODEPLOY.md
+
+# --- Логи ---
+*.log
+*.tmp
+
+state/
+models/
+tmp/
+tmp_tts/
+.oauth_state

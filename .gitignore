@@ -1,0 +1,38 @@
+# Python / venv
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Логи / временные
+*.log
+tmp/
+tmp_tts/
+.oauth_state
+
+# Секреты и приватное
+.env
+*.env
+**/.env
+client_secret.json
+google_token.json
+photo.jpeg
+comments.txt
+AUTODEPLOY.md
+
+# Локальное состояние/БД/модели
+state/
+*.db
+*.sqlite
+*.sqlite3
+models/
+
+# Docker локальная переопределялка
+docker-compose.override.yml
